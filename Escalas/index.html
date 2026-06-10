@@ -188,7 +188,7 @@
   // SINCRONIZAÇÃO NUVEM (Google Apps Script + Drive + Sheets)
   // ====================================================================
   // 👉 Cole aqui a URL do seu Web App do Apps Script (termina com /exec)
-  const GAS_URL = "https://script.google.com/macros/s/AKfycbxbobr9d8M5XtsXbdvuTO5IifdtI-vg4Qiqv-on1laE/dev";
+  const GAS_URL = "https://script.google.com/macros/s/AKfycbw7sx4ITSZ6nOXRRfMSonTJKg1Rk7wB1qmea1JMOaT_L4OsvFA10_z7mbUAR7HMM61duQ/exec";
 
   const cloudEnabled = () => /^https:\/\/script\.google(usercontent)?\.com\//.test(GAS_URL);
 
@@ -257,7 +257,7 @@
     devGarantiaMensal: true, // rodízio garantido: cada unidade entra assim que completa o intervalo
     instrumentoPrimeiro: true, // Violão/Guitarra/Baixo antes do vocal — o canto complementa, não exclui
     devRodizioAleatorio: true, // varia a semana do rodízio (sorteio dentro da janela)
-    devJanelaDias: 7,          // janela do sorteio: candidato de intervalo−X até intervalo+X dias
+    devJanelaDias: 7,          // atraso máximo do sorteio: entra entre intervalo e intervalo+X dias
     targets: { TECLADO: 1, VIOLAO: 1, GUITARRA: 1, BAIXO: 1, BATERIA: 1, SOM: 1, MIDIA: 1, MINISTRO: 1, TECNICO: 0, LIDER: 0 },
     folgasPorPessoa: 1,   // folgas garantidas por pessoa a cada 4 semanas
     evitarConsecutivas: true,
@@ -1973,8 +1973,11 @@
         if (cfg.devGarantiaMensal !== false) {
           const aleat = cfg.devRodizioAleatorio !== false;
           const janela = aleat ? Math.max(0, cfg.devJanelaDias != null ? cfg.devJanelaDias : 7) : 0;
-          const piso = Math.max(7, (cfg.devIntervalDias || 28) - janela);
-          const teto = (cfg.devIntervalDias || 28) + janela;
+          // COTA É COTA: ninguém entra ANTES de completar o intervalo (piso duro).
+          // A variação vem do ATRASO sorteado: quem completou pode entrar já ou
+          // ficar pra outra semana — até intervalo+janela, quando entra garantido.
+          const piso = (cfg.devIntervalDias || 28);
+          const teto = piso + janela;
           const due = devUnits
             .filter(u => unitEligible(u, ds, unav, piso))
             .map(u => ({ u, w: unitWait(u, ds), rk: entryRole(u) }))
@@ -1982,15 +1985,17 @@
           let escolhidas = [];
           if (due.length) {
             if (!cfg.devUnicoPorDia) { escolhidas = due; }
-            else if (!aleat) {
-              due.sort((a, b) => (b.w - a.w) || (Math.random() - 0.5));
-              escolhidas = due.slice(0, 1);
-            } else {
+            else {
               const atrasadas = due.filter(x => x.w >= teto)
                 .sort((a, b) => (b.w - a.w) || (Math.random() - 0.5));
-              escolhidas = atrasadas.length
-                ? [atrasadas[0]]                                  // teto: garantia primeiro
-                : [due[Math.floor(Math.random() * due.length)]];  // janela: sorteio
+              if (atrasadas.length) {
+                escolhidas = [atrasadas[0]]; // atingiu o atraso máximo: entra garantido
+              } else {
+                // Sorteio com a opção "ninguém": Desenvolve+ é facultativo — se
+                // a sorte não vier, a unidade fica pra outra semana (drift)
+                const k = Math.floor(Math.random() * (due.length + 1));
+                if (k < due.length) escolhidas = [due[k]];
+              }
             }
           }
           escolhidas.forEach(x => x.u.ids.forEach(id => { designatedFor[id] = x.rk; }));
@@ -2411,7 +2416,7 @@
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="bg-white border rounded-xl p-5 shadow-sm space-y-3">
             <p className="font-semibold text-sm flex items-center gap-2"><Sparkles size={16} className="text-indigo-500" /> 2a. Escala automática</p>
-            <p className="text-xs text-slate-500">Formação por data: <strong>{automaConfig.vocalM} voz(es) masculina(s) + {automaConfig.vocalF} feminina(s)</strong> + até <strong>{automaConfig.vocalDevMax}</strong> do Desenvolve+ (cada um no máx. 1x a cada <strong>{Math.round(automaConfig.devIntervalDias / 7)} semana(s)</strong>{automaConfig.devUnicoPorDia ? ' — no máx. 1 do Desenvolve+ por dia em todas as funções, dupla conta como um' : ''}{automaConfig.devGarantiaMensal !== false ? '; rodízio garantido: cada um entra assim que completa o intervalo' + (automaConfig.devRodizioAleatorio !== false ? ', com a semana variando por sorteio (±' + (automaConfig.devJanelaDias != null ? automaConfig.devJanelaDias : 7) + ' dias)' : '') : ''}{automaConfig.instrumentoPrimeiro !== false ? '. Violão/Guitarra/Baixo têm prioridade: cada um roda no seu instrumento PRINCIPAL (o canto complementa); secundário só cobre falta' : ''}); instrumentos conforme a aba <strong>Configuração</strong>. Sem substituto, a função fica vazia (ex.: guitarra na folga do titular). Datas já escaladas ficam intactas.</p>
+            <p className="text-xs text-slate-500">Formação por data: <strong>{automaConfig.vocalM} voz(es) masculina(s) + {automaConfig.vocalF} feminina(s)</strong> + até <strong>{automaConfig.vocalDevMax}</strong> do Desenvolve+ (cada um no máx. 1x a cada <strong>{Math.round(automaConfig.devIntervalDias / 7)} semana(s)</strong>{automaConfig.devUnicoPorDia ? ' — no máx. 1 do Desenvolve+ por dia em todas as funções, dupla conta como um' : ''}{automaConfig.devGarantiaMensal !== false ? '; rodízio garantido: cada um entra assim que completa o intervalo' + (automaConfig.devRodizioAleatorio !== false ? ', com a semana variando por sorteio (atraso de até ' + (automaConfig.devJanelaDias != null ? automaConfig.devJanelaDias : 7) + ' dias — nunca antes do intervalo)' : '') : ''}{automaConfig.instrumentoPrimeiro !== false ? '. Violão/Guitarra/Baixo têm prioridade: cada um roda no seu instrumento PRINCIPAL (o canto complementa); secundário só cobre falta' : ''}); instrumentos conforme a aba <strong>Configuração</strong>. Sem substituto, a função fica vazia (ex.: guitarra na folga do titular). Datas já escaladas ficam intactas.</p>
             {(automaConfig.duplas || []).some(d => d.on) && (
               <p className="text-[11px] bg-indigo-50 border border-indigo-200 text-indigo-800 rounded-lg px-3 py-2">
                 👥 Duplas ativas: {(automaConfig.duplas || []).filter(d => d.on).map(d => ((members.find(x => x.id === d.a) || {}).name || '?') + ' ＋ ' + ((members.find(x => x.id === d.b) || {}).name || '?')).join(' • ')} — entram juntos na mesma função.
@@ -2561,11 +2566,11 @@
                 <Toggle checked={automaConfig.devRodizioAleatorio !== false} onChange={v => updateCfg({ devRodizioAleatorio: v })} label="Variar a semana do rodízio (sorteio)" />
                 {automaConfig.devRodizioAleatorio !== false && (
                   <div className="flex items-center justify-between mt-2">
-                    <span className="text-xs text-slate-600">Janela do sorteio</span>
+                    <span className="text-xs text-slate-600">Atraso máximo do sorteio</span>
                     <Stepper value={automaConfig.devJanelaDias != null ? automaConfig.devJanelaDias : 7} onChange={v => updateCfg({ devJanelaDias: v })} min={0} max={14} suffix=" dias" />
                   </div>
                 )}
-                <p className="text-[11px] text-slate-400 mt-1">O intervalo vira alvo: quem passou de intervalo−janela entra no sorteio da semana; quem chegou a intervalo+janela entra garantido. Janela maior = mais embaralhado (±14 ≈ sorteio entre 3 nomes por semana); janela 0 ou sorteio desligado = ordem fixa, intervalo cravado. Datas que já têm escala são sempre preservadas — limpe o período pra re-sortear.</p>
+                <p className="text-[11px] text-slate-400 mt-1">O intervalo é piso DURO: ninguém entra antes de completar a cota. Quem completou entra no sorteio da semana — e pode ficar de fora (Desenvolve+ é facultativo; domingo sem ninguém do projeto acontece). Ao atingir o atraso máximo, entra garantido. Atraso 0 ou sorteio desligado = ordem fixa, intervalo cravado. Datas que já têm escala são sempre preservadas — limpe o período pra re-sortear.</p>
               </div>
             </div>
 
@@ -2683,7 +2688,7 @@
             <p className={`flex items-center gap-1 font-medium ${editMode ? 'text-emerald-400' : 'text-rose-400'}`}>
               {editMode ? <><LockOpen size={12} /> Edição liberada</> : <><Lock size={12} /> Modo navegação</>}
             </p>
-            <p>v3.12 • Janela do Sorteio 🎲</p>
+            <p>v3.13 • Cota Dura 🎲</p>
           </div>
         </aside>
 
